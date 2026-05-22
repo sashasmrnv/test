@@ -63,7 +63,7 @@ def status_text(game):
     return "\n".join(lines)
 
 
-def result_text(game, winner, resigned=None):
+def result_text(game, winner, resigned=None, rating_text=None):
     name = game.white_name if winner == WHITE else game.black_name
     glyph = "⚪" if winner == WHITE else "⚫"
     head = "\U0001f3c6 <b>Игра окончена</b>"
@@ -72,4 +72,7 @@ def result_text(game, winner, resigned=None):
         body = f"{loser_name} сдался.\nПобедитель: {glyph} <b>{name}</b>"
     else:
         body = f"Победитель: {glyph} <b>{name}</b>"
-    return f"{head}\n\n{body}\n\nНапишите /play для новой партии."
+    msg = f"{head}\n\n{body}"
+    if rating_text:
+        msg += f"\n\n{rating_text}"
+    return f"{msg}\n\nНапишите /play для новой партии."
