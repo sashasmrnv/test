@@ -208,7 +208,18 @@ def compute_targets(board, player, r, c):
 
 # ============================== ОТРИСОВКА ================================
 
-GLYPHS = {"w": "⚪", "W": "\U0001f90d", "b": "⚫", "B": "\U0001f5a4"}
+# Палитра фигур: 🔴 красные (белые, снизу, ходят первыми) против 🔵 синих.
+# Кружок — простая шашка, квадрат того же цвета — дамка.
+WHITE_MAN_G = "\U0001f534"  # 🔴
+WHITE_KING_G = "\U0001f7e5"  # 🟥
+BLACK_MAN_G = "\U0001f535"  # 🔵
+BLACK_KING_G = "\U0001f7e6"  # 🟦
+GLYPHS = {
+    "w": WHITE_MAN_G,
+    "W": WHITE_KING_G,
+    "b": BLACK_MAN_G,
+    "B": BLACK_KING_G,
+}
 EMPTY_DARK = "⬛"
 LIGHT = "⬜"
 SELECTED = "\U0001f7e8"  # 🟨 выбранная фигура
@@ -256,12 +267,15 @@ def lobby_keyboard():
 
 def status_text(game):
     turn_name = game.white_name if game.turn == WHITE else game.black_name
-    turn_glyph = "⚪" if game.turn == WHITE else "⚫"
+    turn_glyph = WHITE_MAN_G if game.turn == WHITE else BLACK_MAN_G
+    w_cnt = count_pieces(game.board, WHITE)
+    b_cnt = count_pieces(game.board, BLACK)
     lines = [
         "\U0001f3c1 <b>Русские шашки</b>",
-        f"⚪ {game.white_name}  vs  ⚫ {game.black_name}",
+        f"{WHITE_MAN_G} {game.white_name} — {w_cnt} (снизу)",
+        f"{BLACK_MAN_G} {game.black_name} — {b_cnt} (сверху)",
         "",
-        f"Ход: {turn_glyph} <b>{turn_name}</b>",
+        f"➡️ Ход: {turn_glyph} <b>{turn_name}</b>",
     ]
     if game.must_continue:
         lines.append("⚔️ Бейте дальше — серия взятий обязательна!")
@@ -272,13 +286,15 @@ def status_text(game):
     if MOVE_TIME_LABEL:
         lines.append(f"⏱ На ход: {MOVE_TIME_LABEL}")
     lines.append("")
-    lines.append("⚪⚫ — простые, \U0001f90d\U0001f5a4 — дамки")
+    lines.append(
+        f"{WHITE_MAN_G}{BLACK_MAN_G} — простые, {WHITE_KING_G}{BLACK_KING_G} — дамки"
+    )
     return "\n".join(lines)
 
 
 def result_text(game, winner, resigned=None, timeout=None, rating_text=None):
     name = game.white_name if winner == WHITE else game.black_name
-    glyph = "⚪" if winner == WHITE else "⚫"
+    glyph = WHITE_MAN_G if winner == WHITE else BLACK_MAN_G
     head = "\U0001f3c6 <b>Игра окончена</b>"
     if timeout is not None:
         loser_name = game.white_name if timeout == WHITE else game.black_name
