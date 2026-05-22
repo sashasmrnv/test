@@ -14,3 +14,6 @@ if not BOT_TOKEN:
         "Не задан BOT_TOKEN. Создайте бота у @BotFather и укажите токен "
         "в переменной окружения BOT_TOKEN (см. .env.example)."
     )
+
+# Лимит времени на один ход (в секундах). При просрочке — поражение по времени.
+MOVE_TIME_SECONDS = max(10, int(os.getenv("MOVE_TIME_SECONDS", "60")))

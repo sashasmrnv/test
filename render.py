@@ -15,6 +15,9 @@ LIGHT = "⬜"  # ⬜ неигровое поле
 SELECTED = "\U0001f7e8"  # 🟨 выбранная фигура
 TARGET = "\U0001f7e9"  # 🟩 куда можно пойти
 
+# Подпись лимита времени на ход (например, "1 мин"); задаётся из bot.py.
+MOVE_TIME_LABEL = None
+
 
 def render_board(board, selected=None, targets=None):
     targets = targets or {}
@@ -58,16 +61,24 @@ def status_text(game):
         lines.append("Выберите \U0001f7e9 куда пойти (или нажмите другую шашку).")
     else:
         lines.append("Нажмите на свою шашку, чтобы выбрать ход.")
+    if MOVE_TIME_LABEL:
+        lines.append(f"⏱ На ход: {MOVE_TIME_LABEL}")
     lines.append("")
     lines.append("⚪⚫ — простые, \U0001f90d\U0001f5a4 — дамки")
     return "\n".join(lines)
 
 
-def result_text(game, winner, resigned=None, rating_text=None):
+def result_text(game, winner, resigned=None, timeout=None, rating_text=None):
     name = game.white_name if winner == WHITE else game.black_name
     glyph = "⚪" if winner == WHITE else "⚫"
     head = "\U0001f3c6 <b>Игра окончена</b>"
-    if resigned is not None:
+    if timeout is not None:
+        loser_name = game.white_name if timeout == WHITE else game.black_name
+        body = (
+            f"⏱ {loser_name} не успел сделать ход — поражение по времени.\n"
+            f"Победитель: {glyph} <b>{name}</b>"
+        )
+    elif resigned is not None:
         loser_name = game.white_name if resigned == WHITE else game.black_name
         body = f"{loser_name} сдался.\nПобедитель: {glyph} <b>{name}</b>"
     else:

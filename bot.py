@@ -7,21 +7,35 @@
 вызывает /play, второй присоединяется кнопкой — и партия начинается.
 """
 
+import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
-from aiogram.utils.exceptions import MessageNotModified
+from aiogram.utils.exceptions import MessageNotModified, TelegramAPIError
 
 import engine
 import ratings
-from config import BOT_TOKEN
+import render
+from config import BOT_TOKEN, MOVE_TIME_SECONDS
 from render import lobby_keyboard, render_board, result_text, status_text
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
 dp = Dispatcher(bot)
+
+
+def _format_duration(seconds):
+    minutes, secs = divmod(seconds, 60)
+    if minutes and secs:
+        return f"{minutes} мин {secs} сек"
+    if minutes:
+        return f"{minutes} мин"
+    return f"{secs} сек"
+
+
+render.MOVE_TIME_LABEL = _format_duration(MOVE_TIME_SECONDS)
 
 # Партии в памяти: ключ (chat_id, message_id) -> Game.
 # Хранилище эфемерное: при перезапуске процесса активные партии теряются.
@@ -46,6 +60,9 @@ class Game:
         self.target_id = None  # по user_id (reply / text_mention)
         self.target_username = None  # по @username (в нижнем регистре)
         self.target_label = None  # как показывать вызываемого в тексте
+        # Таймер на ход.
+        self.timer_task = None
+        self.move_seq = 0  # увеличивается при каждом перезапуске таймера
 
     def current_id(self):
         return self.white_id if self.turn == engine.WHITE else self.black_id
@@ -111,6 +128,44 @@ def _rating_block(chat_id, winner_id, winner_name, loser_id, loser_name):
         f"{winner_name}: {w_new} ({fmt(w_delta)})\n"
         f"{loser_name}: {l_new} ({fmt(l_delta)})"
     )
+
+
+def cancel_timer(game):
+    if game.timer_task:
+        game.timer_task.cancel()
+        game.timer_task = None
+
+
+def arm_timer(game):
+    """Перезапускает таймер для игрока, который сейчас должен ходить."""
+    cancel_timer(game)
+    game.move_seq += 1
+    game.timer_task = asyncio.ensure_future(_move_timer(game, game.move_seq))
+
+
+async def _move_timer(game, seq):
+    try:
+        await asyncio.sleep(MOVE_TIME_SECONDS)
+    except asyncio.CancelledError:
+        return
+    # За время сна мог произойти ход (move_seq изменится) или игра завершиться.
+    if game.state != "playing" or game.move_seq != seq:
+        return
+    loser = game.turn
+    winner = engine.BLACK if loser == engine.WHITE else engine.WHITE
+    game.state = "finished"
+    game.timer_task = None
+    w_id, w_name = _side(game, winner)
+    l_id, l_name = _side(game, loser)
+    rating_text = _rating_block(game.chat_id, w_id, w_name, l_id, l_name)
+    text = result_text(game, winner, timeout=loser, rating_text=rating_text)
+    try:
+        await bot.edit_message_text(
+            text, chat_id=game.chat_id, message_id=game.message_id, reply_markup=None
+        )
+    except TelegramAPIError:
+        pass
+    games.pop((game.chat_id, game.message_id), None)
 
 
 # --- Лобби ---------------------------------------------------------------
@@ -182,6 +237,7 @@ async def on_join(call: types.CallbackQuery):
     game.turn = engine.WHITE
     game.state = "playing"
     await safe_edit(call.message, status_text(game), render_board(game.board))
+    arm_timer(game)
     await call.answer("Поехали!")
 
 
@@ -206,6 +262,7 @@ async def on_resign(call: types.CallbackQuery):
     loser = engine.WHITE if uid == game.white_id else engine.BLACK
     winner = engine.BLACK if loser == engine.WHITE else engine.WHITE
     game.state = "finished"
+    cancel_timer(game)
     w_id, w_name = _side(game, winner)
     l_id, l_name = _side(game, loser)
     rating_text = _rating_block(game.chat_id, w_id, w_name, l_id, l_name)
@@ -296,6 +353,7 @@ async def do_move(call, game, r, c):
             status_text(game),
             render_board(board, game.selected, game.targets),
         )
+        arm_timer(game)
         await call.answer("Бейте дальше! 🟩")
         return
 
@@ -311,6 +369,7 @@ async def finish_or_continue(call, game):
     if engine.count_pieces(board, player) == 0 or not engine.player_has_move(board, player):
         winner = engine.BLACK if player == engine.WHITE else engine.WHITE
         game.state = "finished"
+        cancel_timer(game)
         w_id, w_name = _side(game, winner)
         l_id, l_name = _side(game, player)
         rating_text = _rating_block(game.chat_id, w_id, w_name, l_id, l_name)
@@ -319,6 +378,7 @@ async def finish_or_continue(call, game):
         games.pop((game.chat_id, game.message_id), None)
         return
     await safe_edit(call.message, status_text(game), render_board(board))
+    arm_timer(game)
     await call.answer()
 
 
